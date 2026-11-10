@@ -4,14 +4,22 @@
   "version": "2.0.0",
   "author": "Ipan",
   "description": "The Ultimate Audio Suite for Mochy Music: Hi-Res Lossless, Insta-Play Cache, Synced Lyrics, and Anti-Crash Add-on Resolver.",
+  "type": "audio-provider",
   "main": "index.js",
-  "homepage": "https://github.com",
+  "homepage": "https://github.com/muhammadirfanpp11/Ipan-Module",
+  "minAppVersion": "1.0.0",
+  "permissions": [
+    "network",
+    "storage",
+    "audio-stream"
+  ],
   "capabilities": {
     "losslessAudio": true,
     "hiResLossless": true,
     "streamCache": true,
     "syncedLyrics": true,
     "corsBypass": true,
+    "audioProvider": true,
     "formats": ["flac", "alac", "wav", "aac", "mp3", "ogg"]
   }
 }
