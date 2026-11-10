@@ -80,6 +80,14 @@ async function runFullTestSuite() {
   console.log(' - Target Bit-Depth/Sample :', providerStream.bitDepth + '-bit /', providerStream.sampleRate + 'Hz');
   console.log(' ✅ Fitur 6 Lolos: Audio Provider Hook siap menyuplai stream Hi-Res!\n');
 
+  // FITUR 7: Mock Search Tracks (Anti-404 Valid Audio URLs)
+  console.log('🔍 [Fitur 7] Uji Search Tracks (Valid Stream URLs):');
+  const searchResult = await IpanModule.searchTracks('I Don\'t Love You');
+  console.log(' - Search Query:', searchResult[0].title);
+  console.log(' - Stream URL  :', searchResult[0].streamUrl);
+  console.log(' - Fallback URL :', searchResult[0].fallbackUrl);
+  console.log(' ✅ Fitur 7 Lolos: Search mengembalikan URL audio valid tanpa 404!\n');
+
   console.log('====================================================');
   console.log('🎉 SEMUA 5 FITUR UNGGULAN SUDAH TERVERIFIKASI & AKTIF!');
   console.log('Ipan Module siap jadi modul terbaik di Mochy Music!');

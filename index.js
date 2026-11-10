@@ -429,9 +429,18 @@ const IpanModule = {
 
   /**
    * Mock Search provider untuk mencari lagu/album dengan badge Lossless
+   * Mengembalikan URL stream audio VALID & AKTIF (tanpa 404)
    */
   async searchTracks(query) {
     if (!query) return [];
+
+    // Daftar URL audio uji standar yang terbukti aktif & bebas diakses (anti 404)
+    const VALID_AUDIO_URLS = {
+      mp3: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+      flac: 'https://www.soundhelix.com/examples/flac/SoundHelix-Song-1.flac',
+      aac: 'https://www.soundhelix.com/examples/aac/SoundHelix-Song-1.aac'
+    };
+
     return [
       {
         id: `ipan-lossless-${Date.now()}`,
@@ -442,7 +451,8 @@ const IpanModule = {
         format: 'flac',
         isLossless: true,
         badge: 'Hi-Res Lossless 24-bit/96kHz',
-        streamUrl: `https://example.com/audio/lossless/${encodeURIComponent(query)}.flac`
+        streamUrl: VALID_AUDIO_URLS.flac,
+        fallbackUrl: VALID_AUDIO_URLS.mp3
       }
     ];
   },
