@@ -1,23 +1,13 @@
 {
-  "name": "Ipan Module",
-  "version": "2.0.0",
-  "description": "Hi-Res Lossless Audio Suite for Mochy Music (Songs, Lyrics & Song Info)",
-  "author": "Ipan",
-  "icon": "https://raw.githubusercontent.com/muhammadirfanpp11/Ipan-Module/main/README.md",
-  "scripts": [
+  "category:music": [
     {
       "id": "ipan-lossless",
       "name": "Ipan Lossless Engine",
-      "version": "2.0.0",
-      "description": "Hi-Res Lossless, Insta-Play Cache, Synced Lyrics, Anti-Crash & CORS Bypass",
       "author": "Ipan",
-      "download": "https://raw.githubusercontent.com/muhammadirfanpp11/Ipan-Module/main/index.js",
-      "resources": [
-        "search",
-        "stream",
-        "lyrics",
-        "metadata"
-      ]
+      "version": "2.0.0",
+      "description": "Hi-Res Lossless, Synced Lyrics & Audio Provider Engine",
+      "tags": ["LOSSLESS", "HI-RES", "FLAC", "LYRICS"],
+      "download": "ipan.js"
     }
   ]
 }
