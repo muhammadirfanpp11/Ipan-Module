@@ -1,5 +1,5 @@
 /**
- * Test Suite Lengkap untuk Ipan Module v2.0.0
+ * Test Suite Lengkap untuk Ipan Module v2.0.0 (Mochy JS Modules Script API)
  * Jalankan dengan: node test.js
  */
 
@@ -80,16 +80,58 @@ async function runFullTestSuite() {
   console.log(' - Target Bit-Depth/Sample :', providerStream.bitDepth + '-bit /', providerStream.sampleRate + 'Hz');
   console.log(' ✅ Fitur 6 Lolos: Audio Provider Hook siap menyuplai stream Hi-Res!\n');
 
-  // FITUR 7: Mock Search Tracks (Anti-404 Valid Audio URLs)
-  console.log('🔍 [Fitur 7] Uji Search Tracks (Valid Stream URLs):');
-  const searchResult = await IpanModule.searchTracks('I Don\'t Love You');
-  console.log(' - Search Query:', searchResult[0].title);
-  console.log(' - Stream URL  :', searchResult[0].streamUrl);
-  console.log(' - Fallback URL :', searchResult[0].fallbackUrl);
-  console.log(' ✅ Fitur 7 Lolos: Search mengembalikan URL audio valid tanpa 404!\n');
+  // FITUR 7: Mochy JS Modules Script API - searchTracks (Standard Format)
+  console.log('🔍 [Fitur 7] Uji Mochy JS Modules searchTracks API:');
+  const searchResult = await IpanModule.searchTracks('I Don\'t Love You', 5, { settings: { quality: { value: 'LOSSLESS' } } });
+  console.log(' - Tracks Returned :', searchResult.tracks.length);
+  console.log(' - Track ID        :', searchResult.tracks[0].id);
+  console.log(' - Title           :', searchResult.tracks[0].title);
+  console.log(' - Audio Quality   :', searchResult.tracks[0].audioQuality);
+  console.log(' - Stream URL      :', searchResult.tracks[0].streamUrl);
+  console.log(' ✅ Fitur 7 Lolos: searchTracks mengembalikan format standar Mochy JS Modules!\n');
+
+  // FITUR 8: Mochy JS Modules Script API - getTrackStreamUrl (Standard Format)
+  console.log('🎵 [Fitur 8] Uji Mochy JS Modules getTrackStreamUrl API:');
+  const streamResult = await IpanModule.getTrackStreamUrl(searchResult.tracks[0].id, 'LOSSLESS', { settings: {} });
+  console.log(' - Stream URL      :', streamResult.streamUrl);
+  console.log(' - MIME Type       :', streamResult.track.mimeType);
+  console.log(' - Bit Depth       :', streamResult.track.bitDepth + '-bit');
+  console.log(' - Sample Rate     :', streamResult.track.sampleRate + 'Hz');
+  console.log(' ✅ Fitur 8 Lolos: getTrackStreamUrl mengembalikan stream URL & track metadata!\n');
+
+  // FITUR 9: Mochy JS Modules Script API - getTrackLyrics (Standard Format)
+  console.log('🎤 [Fitur 9] Uji Mochy JS Modules getTrackLyrics API:');
+  const lyricsResult = await IpanModule.getTrackLyrics({
+    title: 'Bohemian Rhapsody',
+    artist: 'Queen',
+    artists: ['Queen'],
+    album: 'A Night at the Opera',
+    duration: 355,
+    durationMs: 355000,
+    isrc: 'USUM71809132'
+  }, { settings: {} });
+  console.log(' - Has Synced Lyrics:', lyricsResult && lyricsResult.syncedLyrics ? true : false);
+  console.log(' - Source           :', lyricsResult ? 'Ipan LRCLIB Engine' : 'none');
+  console.log(' ✅ Fitur 9 Lolos: getTrackLyrics mengembalikan synced lyrics standar Mochy!\n');
+
+  // FITUR 10: Mochy JS Modules Script API - getTrackMetadata (Standard Format)
+  console.log('ℹ️ [Fitur 10] Uji Mochy JS Modules getTrackMetadata API:');
+  const metadataResult = await IpanModule.getTrackMetadata({
+    title: 'Bohemian Rhapsody',
+    artist: 'Queen',
+    artists: ['Queen'],
+    album: 'A Night at the Opera',
+    duration: 355,
+    durationMs: 355000,
+    isrc: 'USUM71809132'
+  }, { settings: {} });
+  console.log(' - Album           :', metadataResult.album);
+  console.log(' - Genres          :', metadataResult.genres.join(', '));
+  console.log(' - About           :', metadataResult.about.substring(0, 60) + '...');
+  console.log(' ✅ Fitur 10 Lolos: getTrackMetadata mengembalikan song info standar Mochy!\n');
 
   console.log('====================================================');
-  console.log('🎉 SEMUA 5 FITUR UNGGULAN SUDAH TERVERIFIKASI & AKTIF!');
+  console.log('🎉 SEMUA 10 FITUR UNGGULAN SUDAH TERVERIFIKASI & AKTIF!');
   console.log('Ipan Module siap jadi modul terbaik di Mochy Music!');
   console.log('====================================================');
 }

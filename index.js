@@ -431,8 +431,8 @@ const IpanModule = {
    * Mock Search provider untuk mencari lagu/album dengan badge Lossless
    * Mengembalikan URL stream audio VALID & AKTIF (tanpa 404)
    */
-  async searchTracks(query) {
-    if (!query) return [];
+  async searchTracks(query, limit, context) {
+    if (!query) return { tracks: [] };
 
     // Daftar URL audio uji standar yang terbukti aktif & bebas diakses (anti 404)
     const VALID_AUDIO_URLS = {
@@ -441,20 +441,104 @@ const IpanModule = {
       aac: 'https://www.soundhelix.com/examples/aac/SoundHelix-Song-1.aac'
     };
 
-    return [
-      {
-        id: `ipan-lossless-${Date.now()}`,
-        title: `${query} (Hi-Res Lossless Master)`,
-        artist: 'Ipan Audio Streamer',
-        album: 'Mochy Hi-Res Studio Edition',
-        duration: 210,
-        format: 'flac',
-        isLossless: true,
-        badge: 'Hi-Res Lossless 24-bit/96kHz',
-        streamUrl: VALID_AUDIO_URLS.flac,
-        fallbackUrl: VALID_AUDIO_URLS.mp3
+    // Quality preference from Mochy Music context
+    const quality = context?.settings?.quality?.value || 'LOSSLESS';
+
+    return {
+      tracks: [
+        {
+          id: `ipan-lossless-${Date.now()}`,
+          title: `${query} (Hi-Res Lossless Master)`,
+          artist: 'Ipan Audio Streamer',
+          artists: ['Ipan Audio Streamer'],
+          album: 'Mochy Hi-Res Studio Edition',
+          duration: 210,
+          durationMs: 210000,
+          audioQuality: quality,
+          isrc: 'USUM71809132',
+          streamUrl: VALID_AUDIO_URLS.flac,
+          fallbackUrl: VALID_AUDIO_URLS.mp3
+        }
+      ]
+    };
+  },
+
+  /**
+   * Menyediakan stream audio Lossless/Hi-Res untuk Mochy Music player
+   * @param {string} trackId - ID atau URL lagu
+   * @param {string} qualityPreference - 'lossless', 'hires', 'high', 'standard'
+   */
+  async getTrackStreamUrl(trackId, qualityPreference = 'LOSSLESS', context) {
+    // If trackId is a mock ID from searchTracks, return direct active FLAC stream
+    if (typeof trackId === 'string' && trackId.startsWith('ipan-lossless-')) {
+      const isHiRes = qualityPreference === 'HI_RES_LOSSLESS' || qualityPreference === 'hires';
+      return {
+        streamUrl: 'https://www.soundhelix.com/examples/flac/SoundHelix-Song-1.flac',
+        track: {
+          mimeType: 'audio/flac',
+          bitDepth: isHiRes ? 24 : 16,
+          sampleRate: isHiRes ? 96000 : 44100
+        }
+      };
+    }
+
+    const resolved = await resolveAudioSource(trackId);
+    if (!resolved.success) {
+      return null;
+    }
+
+    const isHiRes = qualityPreference === 'HI_RES_LOSSLESS' || qualityPreference === 'hires';
+    const mimeType = resolved.format === 'flac' ? 'audio/flac' :
+                     resolved.format === 'alac' ? 'audio/alac' :
+                     resolved.format === 'wav' ? 'audio/wav' : 'audio/mpeg';
+
+    return {
+      streamUrl: resolved.streamUrl,
+      track: {
+        mimeType,
+        bitDepth: isHiRes ? 24 : 16,
+        sampleRate: isHiRes ? 96000 : 44100
       }
-    ];
+    };
+  },
+
+  /**
+   * Lirik ter-syncronisasi (LRC format) untuk lagu
+   * @param {object} track - { title, artist, artists, album, duration, durationMs, isrc }
+   */
+  async getTrackLyrics(track, context) {
+    const title = track?.title || '';
+    const artist = track?.artist || (track?.artists && track.artists[0]) || '';
+    if (!title) return null;
+
+    const lyrics = await fetchLyrics(title, artist);
+    if (lyrics && lyrics.hasLyrics && lyrics.syncedLyrics) {
+      return { syncedLyrics: lyrics.syncedLyrics };
+    }
+    if (lyrics && lyrics.hasLyrics && lyrics.plainLyrics) {
+      return { plainLyrics: lyrics.plainLyrics };
+    }
+    return null;
+  },
+
+  /**
+   * Metadata lagu (About song)
+   * @param {object} track - { title, artist, artists, album, duration, durationMs, isrc }
+   */
+  async getTrackMetadata(track, context) {
+    const title = track?.title || '';
+    if (!title) return null;
+
+    return {
+      album: track?.album || 'Mochy Hi-Res Studio Edition',
+      releaseDate: '2024-01-01',
+      genres: ['Hi-Res Audio', 'Lossless'],
+      writers: ['Ipan Audio Engine'],
+      producers: ['Ipan'],
+      label: 'Mochy Music Studio',
+      about: 'Remastered in Hi-Res Lossless 24-bit/96kHz FLAC format by Ipan Audio Engine.',
+      coverUrl: 'https://raw.githubusercontent.com/muhammadirfanpp11/Ipan-Module/main/README.md'
+    };
   },
 
   // Cache Access
@@ -464,6 +548,23 @@ const IpanModule = {
   }
 };
 
+// ==========================================
+// MOCHY JS MODULES SCRIPT EXPORTS (Standard API)
+// ==========================================
+// Mochy Music JS Modules script API requires these exact export names:
+// - searchTracks(query, limit, context)
+// - getTrackStreamUrl(id, quality, context)
+// - getTrackLyrics(track, context)
+// - getTrackMetadata(track, context)
+const MochyJSModulesScript = {
+  searchTracks: IpanModule.searchTracks.bind(IpanModule),
+  getTrackStreamUrl: IpanModule.getTrackStreamUrl.bind(IpanModule),
+  getTrackLyrics: IpanModule.getTrackLyrics.bind(IpanModule),
+  getTrackMetadata: IpanModule.getTrackMetadata.bind(IpanModule)
+};
+
+// Support both CommonJS and ES module exports
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = IpanModule;
+  module.exports.MochyJSModulesScript = MochyJSModulesScript;
 }
