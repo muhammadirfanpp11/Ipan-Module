@@ -178,9 +178,30 @@ function determineAudioBadge(format, bitDepth = 16, sampleRate = 44100, bitrate 
 // ==========================================
 // 4. AUTO LYRICS FETCHER (LRCLIB + MULTI-SOURCE BACKUP)
 // ==========================================
+function normalizeTrackName(name) {
+  if (!name) return '';
+  return name
+    .replace(/\(feat\..*?\)/gi, '')
+    .replace(/\[feat\..*?\]/gi, '')
+    .replace(/\(with.*?\)/gi, '')
+    .replace(/\[with.*?\]/gi, '')
+    .replace(/\(official.*?\)/gi, '')
+    .replace(/\[official.*?\]/gi, '')
+    .replace(/\(video.*?\)/gi, '')
+    .replace(/\[video.*?\]/gi, '')
+    .replace(/\(lyric.*?\)/gi, '')
+    .replace(/\[lyric.*?\]/gi, '')
+    .replace(/\(remastered.*?\)/gi, '')
+    .replace(/\[remastered.*?\]/gi, '')
+    .replace(/\(.*?\)/g, '')
+    .replace(/\[.*?\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 async function fetchLyricsFromOvh(artistName, trackName) {
   const cleanArtist = (artistName || '').trim().replace(/^the\s+/i, '');
-  const cleanTitle = (trackName || '').trim();
+  const cleanTitle = normalizeTrackName(trackName);
   if (!cleanTitle) return null;
 
   const ohvUrl = `https://api.lyrics.ovh/v1/${encodeURIComponent(cleanArtist)}/${encodeURIComponent(cleanTitle)}`;
@@ -195,7 +216,7 @@ async function fetchLyricsFromOvh(artistName, trackName) {
         syncedLyrics: null,
         plainLyrics: data.lyrics,
         isSynced: false,
-        source: 'LRCLOCAL'
+        source: 'LYRICSOVH'
       };
     }
   } catch (_) {}
@@ -227,75 +248,88 @@ async function fetchLyricsFromMusixmatch(artistName, trackName, token) {
 async function fetchLyrics(trackName, artistName, duration = null, context = null) {
   if (!trackName) return null;
 
-  const cacheKey = `${trackName}_${artistName || ''}`.toLowerCase();
+  const cleanTitle = normalizeTrackName(trackName);
+  const cacheKey = `${cleanTitle}_${artistName || ''}`.toLowerCase();
   const cached = lyricsCache.get(cacheKey);
   if (cached) return cached;
 
-  const queryParams = new URLSearchParams({
-    track_name: trackName
-  });
-  if (artistName) queryParams.append('artist_name', artistName);
-  if (duration) queryParams.append('duration', Math.round(duration));
+  // Try multiple query strategies
+  const strategies = [
+    { track: trackName, artist: artistName }, // Original
+    { track: cleanTitle, artist: artistName }, // Normalized
+    { track: cleanTitle, artist: '' } // Title only if artist fails
+  ];
 
-  const url = `https://lrclib.net/api/get?${queryParams.toString()}`;
-  const response = await safeFetch(url, {}, 5000);
+  for (const strategy of strategies) {
+    if (!strategy.track) continue;
 
-  let result = null;
+    const queryParams = new URLSearchParams({
+      track_name: strategy.track
+    });
+    if (strategy.artist) queryParams.append('artist_name', strategy.artist);
+    if (duration) queryParams.append('duration', Math.round(duration));
 
-  if (response) {
-    try {
-      const data = await response.json();
-      result = {
-        hasLyrics: Boolean(data.plainLyrics || data.syncedLyrics),
-        syncedLyrics: data.syncedLyrics || null, // Format LRC dengan timestamp [mm:ss.xx]
-        plainLyrics: data.plainLyrics || null,
-        isSynced: Boolean(data.syncedLyrics),
-        source: 'LRCLIB'
-      };
-    } catch (_) {
-      result = null;
+    const url = `https://lrclib.net/api/get?${queryParams.toString()}`;
+    const response = await safeFetch(url, {}, 4000);
+
+    if (response) {
+      try {
+        const data = await response.json();
+        if (data.plainLyrics || data.syncedLyrics) {
+          const result = {
+            hasLyrics: true,
+            syncedLyrics: data.syncedLyrics || null,
+            plainLyrics: data.plainLyrics || null,
+            isSynced: Boolean(data.syncedLyrics),
+            source: 'LRCLIB'
+          };
+          lyricsCache.set(cacheKey, result);
+          return result;
+        }
+      } catch (_) {}
     }
-  }
 
-  // Backup Source 1: LRCLIB Search API (jika get spesifik gagal)
-  if (!result || !result.hasLyrics) {
-    const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(`${trackName} ${artistName || ''}`.trim())}`;
-    const searchRes = await safeFetch(searchUrl, {}, 5000);
+    // Try search API if specific get fails
+    const searchQuery = strategy.artist ? `${strategy.artist} ${strategy.track}` : strategy.track;
+    const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(searchQuery.trim())}`;
+    const searchRes = await safeFetch(searchUrl, {}, 4000);
     if (searchRes) {
       try {
         const items = await searchRes.json();
         if (Array.isArray(items) && items.length > 0) {
-          const item = items[0];
-          result = {
-            hasLyrics: true,
-            syncedLyrics: item.syncedLyrics || null,
-            plainLyrics: item.plainLyrics || null,
-            isSynced: Boolean(item.syncedLyrics),
-            source: 'LRCLIB'
-          };
+          // Prefer synced lyrics
+          const item = items.find(i => i.syncedLyrics) || items[0];
+          if (item.plainLyrics || item.syncedLyrics) {
+            const result = {
+              hasLyrics: true,
+              syncedLyrics: item.syncedLyrics || null,
+              plainLyrics: item.plainLyrics || null,
+              isSynced: Boolean(item.syncedLyrics),
+              source: 'LRCLIB_SEARCH'
+            };
+            lyricsCache.set(cacheKey, result);
+            return result;
+          }
         }
-      } catch (_) {
-        result = null;
-      }
+      } catch (_) {}
     }
   }
 
-  // Backup Source 2: Lyrics.ovh API (plain text fallback, tanpa API key)
-  if (!result || !result.hasLyrics) {
-    const ovhLyrics = await fetchLyricsFromOvh(artistName, trackName);
-    if (ohvLyrics) result = ohvLyrics;
+  // Backup Source 2: Lyrics.ovh API
+  const ovhLyrics = await fetchLyricsFromOvh(artistName, trackName);
+  if (ovhLyrics) {
+    lyricsCache.set(cacheKey, ovhLyrics);
+    return ovhLyrics;
   }
 
-  // Backup Source 3: Musixmatch API (pakai token dari context jika tersedia)
-  if (!result || !result.hasLyrics) {
-    const mmToken = context?.lyrics?.token || context?.token || '';
+  // Backup Source 3: Musixmatch API
+  const mmToken = context?.lyrics?.token || context?.token || '';
+  if (mmToken) {
     const mmLyrics = await fetchLyricsFromMusixmatch(artistName, trackName, mmToken);
-    if (mmLyrics) result = mmLyrics;
-  }
-
-  if (result && result.hasLyrics) {
-    lyricsCache.set(cacheKey, result);
-    return result;
+    if (mmLyrics) {
+      lyricsCache.set(cacheKey, mmLyrics);
+      return mmLyrics;
+    }
   }
 
   return null;
@@ -530,6 +564,7 @@ const IpanModule = {
               duration: t.duration ? Math.round(t.duration > 10000 ? t.duration / 1000 : t.duration) : 240,
               audioQuality: 'LOSSLESS',
               isrc: t.isrc || undefined,
+              coverUrl: `https://tracks.monochrome.st/covers/${trackId}.jpg`,
               streamUrl: `https://tracks.monochrome.st/track/${trackId}`
             });
           }
@@ -551,6 +586,10 @@ const IpanModule = {
           for (const song of results) {
             const mediaUrl = song.more_info?.encrypted_media_url;
             if (!mediaUrl) continue;
+
+            // Get cover art URL (usually 50x50, 150x150, or 500x500)
+            const cover = song.image ? song.image.replace('150x150', '500x500') : null;
+
             const authRes = await safeFetch(
               `https://www.jiosaavn.com/api.php?__call=song.generateAuthToken&url=${encodeURIComponent(mediaUrl)}&bitrate=320&api_version=4&_format=json&ctx=web6dot0`,
               { headers: { Accept: 'application/json' } },
@@ -568,6 +607,7 @@ const IpanModule = {
                   album: song.more_info?.album || 'JioSaavn Studio Edition',
                   duration: parseInt(song.more_info?.duration || '240', 10),
                   audioQuality: 'HIGH',
+                  coverUrl: cover,
                   streamUrl: `https://ipan-module.mirfanpp11.workers.dev/proxy?url=${encodeURIComponent(authData.auth_url)}`,
                   fallbackUrl: `https://ipan-module.mirfanpp11.workers.dev/proxy?url=${encodeURIComponent(authData.auth_url)}`
                 });
@@ -692,8 +732,10 @@ const IpanModule = {
       writers: ['Ipan Audio Engine'],
       producers: ['Ipan'],
       label: 'Mochy Music Studio',
-      about: 'Remastered in Hi-Res Lossless 24-bit/96kHz FLAC format by Ipan Audio Engine.',
-      coverUrl: 'https://raw.githubusercontent.com/muhammadirfanpp11/Ipan-Module/main/README.md'
+      about: track?.isrc
+        ? `Remastered in Hi-Res Lossless 24-bit/96kHz FLAC format (ISRC: ${track.isrc}).`
+        : 'Remastered in Hi-Res Lossless 24-bit/96kHz FLAC format by Ipan Audio Engine.',
+      coverUrl: track?.coverUrl || 'https://raw.githubusercontent.com/muhammadirfanpp11/Ipan-Module/main/README.md'
     };
   },
 

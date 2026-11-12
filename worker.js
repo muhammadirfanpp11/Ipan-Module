@@ -18,6 +18,27 @@ const json = (body, status = 200) =>
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 MochyMusic/IpanModule-2.1";
 
+function normalizeTrackName(name) {
+  if (!name) return "";
+  return name
+    .replace(/\(feat\..*?\)/gi, "")
+    .replace(/\[feat\..*?\]/gi, "")
+    .replace(/\(with.*?\)/gi, "")
+    .replace(/\[with.*?\]/gi, "")
+    .replace(/\(official.*?\)/gi, "")
+    .replace(/\[official.*?\]/gi, "")
+    .replace(/\(video.*?\)/gi, "")
+    .replace(/\[video.*?\]/gi, "")
+    .replace(/\(lyric.*?\)/gi, "")
+    .replace(/\[lyric.*?\]/gi, "")
+    .replace(/\(remastered.*?\)/gi, "")
+    .replace(/\[remastered.*?\]/gi, "")
+    .replace(/\(.*?\)/g, "")
+    .replace(/\[.*?\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export default {
   async fetch(request) {
     if (request.method === "OPTIONS") {
@@ -37,7 +58,7 @@ export default {
       return json({
         id: "ipan-lossless",
         name: "Ipan Module",
-        version: "2.1.0",
+        version: "2.2.0",
         author: "Ipan",
         description: "Standalone Hi-Res Lossless Audio Suite for Mochy Music",
         resources: ["search", "stream", "lyrics", "metadata"],
@@ -90,6 +111,7 @@ export default {
                 duration: durationSec,
                 audioQuality: "LOSSLESS",
                 isrc: t.isrc || undefined,
+                coverUrl: `https://tracks.monochrome.st/covers/${trackId}.jpg`,
                 streamURL: `https://tracks.monochrome.st/track/${trackId}`
               });
             }
@@ -118,6 +140,8 @@ export default {
               const mediaUrl = song.more_info?.encrypted_media_url;
               if (!mediaUrl) continue;
 
+              const cover = song.image ? song.image.replace("150x150", "500x500") : null;
+
               // Generate auth token stream URL
               const authRes = await fetch(
                 `https://www.jiosaavn.com/api.php?__call=song.generateAuthToken&url=${encodeURIComponent(mediaUrl)}&bitrate=320&api_version=4&_format=json&ctx=web6dot0`,
@@ -144,6 +168,7 @@ export default {
                     album: song.more_info?.album || "Studio Edition",
                     duration: durationSec,
                     audioQuality: "HIGH",
+                    coverUrl: cover,
                     streamURL: proxyStreamUrl
                   });
                   break; // Cukup ambil kandidat terbaik pertama yang aktif
@@ -170,6 +195,7 @@ export default {
               album: firstTrack.album,
               duration: firstTrack.duration,
               audioQuality: firstTrack.audioQuality,
+              coverUrl: firstTrack.coverUrl,
               streamURL: firstTrack.streamURL
             });
           }
@@ -242,40 +268,71 @@ export default {
       const title = url.searchParams.get("title") || "";
       const artist = url.searchParams.get("artist") || "";
 
-      try {
-        let lrcRes = await fetch(
-          `https://lrclib.net/api/get?track_name=${encodeURIComponent(title)}&artist_name=${encodeURIComponent(artist)}`
-        );
-        if (lrcRes.ok) {
-          const lrcData = await lrcRes.json();
-          if (lrcData.syncedLyrics) return json({ syncedLyrics: lrcData.syncedLyrics });
-          if (lrcData.plainLyrics) return json({ plainLyrics: lrcData.plainLyrics });
-        }
+      const cleanTitle = normalizeTrackName(title);
+      const strategies = [
+        { track: title, artist },
+        { track: cleanTitle, artist },
+        { track: cleanTitle, artist: "" }
+      ];
 
-        lrcRes = await fetch(
-          `https://lrclib.net/api/search?q=${encodeURIComponent(`${artist} ${title}`)}`
-        );
-        if (lrcRes.ok) {
-          const searchData = await lrcRes.json();
-          if (Array.isArray(searchData) && searchData.length > 0) {
-            const hit = searchData.find((s) => s.syncedLyrics) || searchData[0];
-            if (hit.syncedLyrics) return json({ syncedLyrics: hit.syncedLyrics });
-            if (hit.plainLyrics) return json({ plainLyrics: hit.plainLyrics });
+      for (const strat of strategies) {
+        if (!strat.track) continue;
+
+        try {
+          const lrcRes = await fetch(
+            `https://lrclib.net/api/get?track_name=${encodeURIComponent(strat.track)}&artist_name=${encodeURIComponent(strat.artist)}`
+          );
+          if (lrcRes.ok) {
+            const lrcData = await lrcRes.json();
+            if (lrcData.syncedLyrics) return json({ syncedLyrics: lrcData.syncedLyrics });
+            if (lrcData.plainLyrics) return json({ plainLyrics: lrcData.plainLyrics });
           }
-        }
-      } catch (_) {}
+
+          const qStr = strat.artist ? `${strat.artist} ${strat.track}` : strat.track;
+          const searchRes = await fetch(
+            `https://lrclib.net/api/search?q=${encodeURIComponent(qStr)}`
+          );
+          if (searchRes.ok) {
+            const searchData = await searchRes.json();
+            if (Array.isArray(searchData) && searchData.length > 0) {
+              const hit = searchData.find((s) => s.syncedLyrics) || searchData[0];
+              if (hit.syncedLyrics) return json({ syncedLyrics: hit.syncedLyrics });
+              if (hit.plainLyrics) return json({ plainLyrics: hit.plainLyrics });
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Backup lyrics.ovh
+      if (artist && cleanTitle) {
+        try {
+          const cleanArtist = artist.trim().replace(/^the\s+/i, "");
+          const ovhRes = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(cleanArtist)}/${encodeURIComponent(cleanTitle)}`);
+          if (ovhRes.ok) {
+            const ovhData = await ovhRes.json();
+            if (ovhData && ovhData.lyrics) {
+              return json({ plainLyrics: ovhData.lyrics });
+            }
+          }
+        } catch (_) {}
+      }
 
       return json({ plainLyrics: `Lirik untuk ${title} oleh ${artist}` });
     }
 
     // 6. METADATA (About song)
     if (url.pathname === "/metadata") {
+      const title = url.searchParams.get("title") || "Audio Master";
+      const album = url.searchParams.get("album") || "Studio Master Edition";
+      const coverUrl = url.searchParams.get("coverUrl") || null;
+
       return json({
-        album: "Studio Master Edition",
+        album: album,
         genres: ["Hi-Res Audio", "Lossless FLAC"],
         writers: ["Ipan Audio Engine"],
         producers: ["Ipan"],
-        about: "Audio streamed in bit-perfect Lossless FLAC via Ipan Module Suite."
+        about: `Audio streamed in bit-perfect Lossless FLAC via Ipan Module Suite for "${title}".`,
+        coverUrl: coverUrl
       });
     }
 
