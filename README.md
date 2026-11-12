@@ -1,4 +1,4 @@
-# 🎵 Ipan Module (v2.2.0) for Mochy Music
+# 🎵 Ipan Module (v3.0.0) for Mochy Music
 
 Modul audio komprehensif & script **JS Modules** resmi untuk **Mochy Music** (Android) yang menggabungkan kualitas audio audiophile (Hi-Res Lossless 24-bit/96kHz), lirik sinkron karaoke, in-memory cache, serta proteksi anti-crash.
 
