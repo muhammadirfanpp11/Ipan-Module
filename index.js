@@ -1,5 +1,5 @@
 /**
- * Ipan Module (v2.0.0) - Ultimate Mochy Music Suite
+ * Ipan Module (v2.2.0) - Ultimate Mochy Music Suite
  * Author: Ipan
  *
  * Features:
@@ -8,6 +8,10 @@
  * 3. 🔄 Auto Quality Fallback (Anti-buffering multi-stream resolution)
  * 4. 🎤 Auto Synchronized Lyrics Fetcher (LRCLIB Integration for .lrc karaoke)
  * 5. 🛡️ CORS & User-Agent Bypass Engine (Anti-blocking & Hotlink protection)
+ * 6. 🖼️ Cover Art Plugin Integration
+ * 7. 🔍 Fuzzy Matcher for Search
+ * 8. 📚 Persistent Local Database (localStorage)
+ * 9. 📊 Rich Metadata & Chart Support
  */
 
 // Format audio prioritas
@@ -444,8 +448,8 @@ async function resolveAudioSource(rawUrl, options = {}) {
 const IpanModule = {
   id: 'ipan-lossless',
   name: 'Ipan Module',
-  version: '2.0.0',
-  description: 'Hi-Res Lossless, Insta-Play Cache, Anti-Buffering & Synced Lyrics Engine for Mochy Music',
+  version: '2.2.0',
+  description: 'Hi-Res Lossless, Insta-Play Cache, Anti-Buffering & Synced Lyrics Engine for Mochy Music with Multi-Provider Search, Backup Lyrics, Cover Art & Rich Metadata',
 
   // Core API
   resolve: resolveAudioSource,
