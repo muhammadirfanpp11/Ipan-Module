@@ -1,0 +1,11 @@
+{
+  "id": "ipan-lossless",
+  "name": "Ipan Module Pro",
+  "version": "3.0.0",
+  "author": "Ipan",
+  "description": "Standalone Hi-Res Lossless Audio Suite for Mochy Music",
+  "resources": ["search", "stream", "lyrics", "metadata"],
+  "settings": [
+    { "key": "quality", "label": "Stream Quality", "default": "hires", "options": ["hires", "lossless", "high"] }
+  ]
+}
