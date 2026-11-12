@@ -1,4 +1,4 @@
-# 🎵 Ipan Module (v2.2.0) for Mochy Music
+# 🎵 Ipan Module (v3.0.0) for Mochy Music
 
 Modul audio komprehensif & script **JS Modules** resmi untuk **Mochy Music** (Android) yang menggabungkan kualitas audio audiophile (Hi-Res Lossless 24-bit/96kHz), lirik sinkron karaoke, in-memory cache, serta proteksi anti-crash.
 
@@ -57,7 +57,7 @@ Kamu bisa memasang **Ipan Module** di aplikasi Mochy Music dengan 3 cara resmi:
 ### Cara 3: Via Cloudflare Worker (Mochy Internal)
 1. **Cloudflare Worker URL**: `https://ipan-module.mirfanpp11.workers.dev`
 2. Pada bagian **Add a module**, pilih **Web Module** dan paste URL worker.
-3. Worker menangani semua endpoint secara internal: `/search`, `/stream`, `/lyrics`, `/metadata`, `/proxy`.
+3. Worker menangani semua endpoint secara internal: `/search`, `/stream`, `/lyrics`, `/metadata`, `/proxy`, `/health`.
 
 ---
 
@@ -69,7 +69,7 @@ Kamu bisa memasang **Ipan Module** di aplikasi Mochy Music dengan 3 cara resmi:
 
 ### 2. Alur Audio
 ```
-Mochy → searchTracks → resolveAudioSource → streamCache → worker → proxy → JioSaavn/Monochrome
+Mochy → searchTracks → resolveAudioSource → streamCache → worker → proxy → Monochrome/JioSaavn/Deezer (Multi-Source Fallback)
 ```
 
 ### 3. Alur Lirik
@@ -116,13 +116,12 @@ Fork → Edit → Test → Push → PR
 
 ## 📋 Status Versi
 
-- **v2.2.0** (2026-11-12)
-  - Peningkatan pencarian lirik (normalisasi judul)
-  - Cover art dinamis & metadata diperkaya
-  - Penyempurnaan anti-crash & fallback
-  - Peningkatan audio engine
-  - API JS Modules diperbarui
+- **v3.0.0** (2026-11-12)
+  - Worker v3.0.0 multi-source fallback (Monochrome -> JioSaavn -> Deezer)
+  - ✅ Semua endpoint: `/search`, `/stream`, `/lyrics`, `/metadata`, `/proxy`, `/health`
+  - ✅ Dukungan Hi-Res Lossless FLAC (24-bit/96kHz), API health check, CORS bypass yang ditingkatkan
   - Worker-ready untuk Cloudflare
+  - **NOTE:** Update dilakukan agar versi `index.json`, `manifest.json`, worker, ipan.js, README.md sinkron di semua file
 
 ---
 
