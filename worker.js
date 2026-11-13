@@ -1,14 +1,50 @@
 /**
- * Ipan Module (v3.0.0) - Enhanced Private Audio Server & Cloudflare Worker
+ * Ipan Module (v3.1.0 - Optimized) - Enhanced Private Audio Server & Cloudflare Worker
  * Features:
- * 1. Multi-Source Fallback (Monochrome FLAC/Hi-Res -> JioSaavn AAC -> Deezer MP3)
- * 2. Bit-Perfect Lossless & Hi-Res Support (24-bit/96kHz)
- * 3. Smart Proxy & CORS Bypass for Streaming
- * 4. Advanced LRCLIB Synced Lyrics & Backup (Lyrics.ovh)
- * 5. Rich Metadata & Cover Art Engine
+ * 1. In-Memory Worker Cache (Lightning fast insta-play & search responses)
+ * 2. Strict Timeout & AbortController (Prevents worker hanging on dead APIs)
+ * 3. Multi-Source Fallback (Monochrome FLAC/Hi-Res -> JioSaavn AAC -> Deezer MP3)
+ * 4. Bit-Perfect Lossless & Hi-Res Support (24-bit/96kHz)
+ * 5. Smart Proxy & CORS Bypass for Streaming
+ * 6. Advanced LRCLIB Synced Lyrics & Backup (Lyrics.ovh)
  */
 
-const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 MochyMusic/IpanModule-3.0";
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 MochyMusic/IpanModule-3.1";
+
+// ==========================================
+// 1. IN-MEMORY WORKER CACHE (TTL & Max Entries)
+// ==========================================
+class WorkerCache {
+  constructor(ttlMs = 15 * 60 * 1000, maxEntries = 150) {
+    this.ttl = ttlMs;
+    this.maxEntries = maxEntries;
+    this.cache = new Map();
+  }
+
+  get(key) {
+    if (!this.cache.has(key)) return null;
+    const entry = this.cache.get(key);
+    if (Date.now() > entry.expiry) {
+      this.cache.delete(key);
+      return null;
+    }
+    return entry.value;
+  }
+
+  set(key, value) {
+    if (this.cache.size >= this.maxEntries) {
+      const oldestKey = this.cache.keys().next().value;
+      this.cache.delete(oldestKey);
+    }
+    this.cache.set(key, {
+      value,
+      expiry: Date.now() + this.ttl
+    });
+  }
+}
+
+const searchCache = new WorkerCache(20 * 60 * 1000, 200); // Cache search 20 min
+const lyricsCache = new WorkerCache(30 * 60 * 1000, 200); // Cache lyrics 30 min
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -42,6 +78,27 @@ function normalizeTrackName(name) {
     .trim();
 }
 
+// Fetch with timeout wrapper to prevent worker hanging
+async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        "User-Agent": USER_AGENT,
+        ...(options.headers || {})
+      }
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    return null;
+  }
+}
+
 export default {
   async fetch(request) {
     if (request.method === "OPTIONS") {
@@ -61,53 +118,61 @@ export default {
       return json({
         id: "ipan-lossless-pro",
         name: "Ipan Private Hi-Res Server",
-        version: "3.0.0",
+        version: "3.1.0",
         author: "Ipan",
-        description: "Private Multi-Source Hi-Res Lossless Audio & Lyrics Server",
-        resources: ["search", "stream", "lyrics", "metadata", "health"],
+        description: "Optimized Private Multi-Source Hi-Res Lossless Audio & Lyrics Server",
+        resources: ["search", "stream", "lyrics", "metadata", "health", "cache-stats"],
         settings: [
           { "key": "quality", "label": "Stream Quality", "default": "hires", "options": ["hires", "lossless", "high"] }
         ]
       });
     }
 
-    // 2. HEALTH CHECK (Memeriksa status semua sumber audio)
+    // 1.5 CACHE STATS ENDPOINT
+    if (url.pathname === "/cache-stats") {
+      return json({
+        searchCacheSize: searchCache.cache.size,
+        lyricsCacheSize: lyricsCache.cache.size
+      });
+    }
+
+    // 2. HEALTH CHECK
     if (url.pathname === "/health") {
-      const status = { server: "active", version: "3.0.0", timestamp: Date.now(), sources: {} };
+      const status = { server: "active", version: "3.1.0", timestamp: Date.now(), sources: {} };
 
-      try {
-        const monoTest = await fetch("https://tracks.monochrome.st/search/tracks?q=test&limit=1", { headers: { "User-Agent": USER_AGENT } });
-        status.sources.monochrome = monoTest.ok ? "ONLINE" : "DEGRADED";
-      } catch (_) { status.sources.monochrome = "OFFLINE"; }
+      const monoTest = await fetchWithTimeout("https://tracks.monochrome.st/search/tracks?q=test&limit=1", {}, 3000);
+      status.sources.monochrome = monoTest && monoTest.ok ? "ONLINE" : "DEGRADED";
 
-      try {
-        const jioTest = await fetch("https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&q=test", { headers: { "User-Agent": USER_AGENT } });
-        status.sources.jiosaavn = jioTest.ok ? "ONLINE" : "DEGRADED";
-      } catch (_) { status.sources.jiosaavn = "OFFLINE"; }
+      const jioTest = await fetchWithTimeout("https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&q=test", {}, 3000);
+      status.sources.jiosaavn = jioTest && jioTest.ok ? "ONLINE" : "DEGRADED";
 
-      try {
-        const deezerTest = await fetch("https://api.deezer.com/search?q=test", { headers: { "User-Agent": USER_AGENT } });
-        status.sources.deezer = deezerTest.ok ? "ONLINE" : "DEGRADED";
-      } catch (_) { status.sources.deezer = "OFFLINE"; }
+      const deezerTest = await fetchWithTimeout("https://api.deezer.com/search?q=test", {}, 3000);
+      status.sources.deezer = deezerTest && deezerTest.ok ? "ONLINE" : "DEGRADED";
 
       return json(status);
     }
 
-    // 3. SEARCH (Multi-Source Fallback Chain: Monochrome -> JioSaavn -> Deezer)
+    // 3. SEARCH (With In-Memory Cache & Multi-Source Fallback)
     if (url.pathname === "/search") {
       const q = (url.searchParams.get("q") || "").trim();
       if (!q) return json({ tracks: [] });
 
+      const cachedResult = searchCache.get(q.toLowerCase());
+      if (cachedResult) {
+        return json({ tracks: cachedResult, cached: true });
+      }
+
       let tracks = [];
 
-      // A. Sumber Utama: Monochrome Studio FLAC Engine (Hi-Res Lossless 24-bit/96kHz)
+      // A. Sumber Utama: Monochrome Studio FLAC Engine
       try {
-        const monoRes = await fetch(
+        const monoRes = await fetchWithTimeout(
           `https://tracks.monochrome.st/search/tracks?q=${encodeURIComponent(q)}&limit=6`,
-          { headers: { Accept: "application/json", "User-Agent": USER_AGENT } }
+          { headers: { Accept: "application/json" } },
+          5000
         );
 
-        if (monoRes.ok) {
+        if (monoRes && monoRes.ok) {
           const monoData = await monoRes.json();
           if (Array.isArray(monoData.tracks) && monoData.tracks.length > 0) {
             for (const t of monoData.tracks) {
@@ -139,12 +204,13 @@ export default {
       // B. Sumber Cadangan 1: JioSaavn (320kbps AAC)
       if (tracks.length === 0) {
         try {
-          const saavnRes = await fetch(
+          const saavnRes = await fetchWithTimeout(
             `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=5&p=1&q=${encodeURIComponent(q)}`,
-            { headers: { "User-Agent": USER_AGENT, Accept: "application/json" } }
+            { headers: { Accept: "application/json" } },
+            5000
           );
 
-          if (saavnRes.ok) {
+          if (saavnRes && saavnRes.ok) {
             const saavnData = await saavnRes.json();
             const results = saavnData.results || [];
 
@@ -153,12 +219,13 @@ export default {
               if (!mediaUrl) continue;
 
               const cover = song.image ? song.image.replace("150x150", "500x500") : null;
-              const authRes = await fetch(
+              const authRes = await fetchWithTimeout(
                 `https://www.jiosaavn.com/api.php?__call=song.generateAuthToken&url=${encodeURIComponent(mediaUrl)}&bitrate=320&api_version=4&_format=json&ctx=web6dot0`,
-                { headers: { "User-Agent": USER_AGENT, Accept: "application/json" } }
+                { headers: { Accept: "application/json" } },
+                4000
               );
 
-              if (authRes.ok) {
+              if (authRes && authRes.ok) {
                 const authData = await authRes.json();
                 if (authData.status === "success" && authData.auth_url) {
                   const songArtist = song.more_info?.music || song.subtitle || "Artist";
@@ -189,16 +256,18 @@ export default {
       // C. Sumber Cadangan 2: Deezer API (320kbps MP3)
       if (tracks.length === 0) {
         try {
-          const deezerRes = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(q)}`, {
-            headers: { "User-Agent": USER_AGENT, Accept: "application/json" }
-          });
+          const deezerRes = await fetchWithTimeout(
+            `https://api.deezer.com/search?q=${encodeURIComponent(q)}`,
+            { headers: { Accept: "application/json" } },
+            4000
+          );
 
-          if (deezerRes.ok) {
+          if (deezerRes && deezerRes.ok) {
             const deezerData = await deezerRes.json();
             const dataList = deezerData.data || [];
             if (dataList.length > 0) {
               const song = dataList[0];
-              const previewUrl = song.preview; // 30s or full preview depending on availability, proxied
+              const previewUrl = song.preview;
               const cover = song.album?.cover_big || song.album?.cover_medium || null;
               const artistName = song.artist?.name || "Artist";
 
@@ -248,7 +317,9 @@ export default {
         }
       }
 
-      return json({ tracks });
+      // Save to worker cache
+      searchCache.set(q.toLowerCase(), tracks);
+      return json({ tracks, cached: false });
     }
 
     // 4. STREAM RESOLVER
@@ -307,10 +378,14 @@ export default {
       }
     }
 
-    // 6. LYRICS (LRCLIB + Normalization + Lyrics.ovh Backup)
+    // 6. LYRICS (With Cache & Multi-Source)
     if (url.pathname === "/lyrics") {
       const title = url.searchParams.get("title") || "";
       const artist = url.searchParams.get("artist") || "";
+
+      const cacheKey = `${title}_${artist}`.toLowerCase();
+      const cachedLyrics = lyricsCache.get(cacheKey);
+      if (cachedLyrics) return json(cachedLyrics);
 
       const cleanTitle = normalizeTrackName(title);
       const strategies = [
@@ -319,47 +394,68 @@ export default {
         { track: cleanTitle, artist: "" }
       ];
 
+      let lyricResult = null;
+
       for (const strat of strategies) {
         if (!strat.track) continue;
 
         try {
-          const lrcRes = await fetch(
-            `https://lrclib.net/api/get?track_name=${encodeURIComponent(strat.track)}&artist_name=${encodeURIComponent(strat.artist)}`
+          const lrcRes = await fetchWithTimeout(
+            `https://lrclib.net/api/get?track_name=${encodeURIComponent(strat.track)}&artist_name=${encodeURIComponent(strat.artist)}`,
+            {},
+            3000
           );
-          if (lrcRes.ok) {
+          if (lrcRes && lrcRes.ok) {
             const lrcData = await lrcRes.json();
-            if (lrcData.syncedLyrics) return json({ syncedLyrics: lrcData.syncedLyrics });
-            if (lrcData.plainLyrics) return json({ plainLyrics: lrcData.plainLyrics });
+            if (lrcData.syncedLyrics) {
+              lyricResult = { syncedLyrics: lrcData.syncedLyrics };
+              break;
+            }
+            if (lrcData.plainLyrics) {
+              lyricResult = { plainLyrics: lrcData.plainLyrics };
+              break;
+            }
           }
 
           const qStr = strat.artist ? `${strat.artist} ${strat.track}` : strat.track;
-          const searchRes = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(qStr)}`);
-          if (searchRes.ok) {
+          const searchRes = await fetchWithTimeout(`https://lrclib.net/api/search?q=${encodeURIComponent(qStr)}`, {}, 3000);
+          if (searchRes && searchRes.ok) {
             const searchData = await searchRes.json();
             if (Array.isArray(searchData) && searchData.length > 0) {
               const hit = searchData.find((s) => s.syncedLyrics) || searchData[0];
-              if (hit.syncedLyrics) return json({ syncedLyrics: hit.syncedLyrics });
-              if (hit.plainLyrics) return json({ plainLyrics: hit.plainLyrics });
+              if (hit.syncedLyrics) {
+                lyricResult = { syncedLyrics: hit.syncedLyrics };
+                break;
+              }
+              if (hit.plainLyrics) {
+                lyricResult = { plainLyrics: hit.plainLyrics };
+                break;
+              }
             }
           }
         } catch (_) {}
       }
 
       // Backup Lyrics.ovh
-      if (artist && cleanTitle) {
+      if (!lyricResult && artist && cleanTitle) {
         try {
           const cleanArtist = artist.trim().replace(/^the\s+/i, "");
-          const ovhRes = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(cleanArtist)}/${encodeURIComponent(cleanTitle)}`);
-          if (ovhRes.ok) {
+          const ovhRes = await fetchWithTimeout(`https://api.lyrics.ovh/v1/${encodeURIComponent(cleanArtist)}/${encodeURIComponent(cleanTitle)}`, {}, 3000);
+          if (ovhRes && ovhRes.ok) {
             const ovhData = await ovhRes.json();
             if (ovhData && ovhData.lyrics) {
-              return json({ plainLyrics: ovhData.lyrics });
+              lyricResult = { plainLyrics: ovhData.lyrics };
             }
           }
         } catch (_) {}
       }
 
-      return json({ plainLyrics: `Lirik untuk ${title} oleh ${artist}` });
+      if (!lyricResult) {
+        lyricResult = { plainLyrics: `Lirik untuk ${title} oleh ${artist}` };
+      }
+
+      lyricsCache.set(cacheKey, lyricResult);
+      return json(lyricResult);
     }
 
     // 7. METADATA
